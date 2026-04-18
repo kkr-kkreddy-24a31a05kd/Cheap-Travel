@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>CheapTravel | Multi-City Bus & Train Booking</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+        * { font-family: 'Plus Jakarta Sans', system-ui, sans-serif; }
+        body { background: #f0f4f9; overflow-x: hidden; }
+        .hero-gradient { background: radial-gradient(circle at 20% 30%, #020c2a, #0a2a4a); }
+        .page-transition { animation: pageFade 0.3s ease-out forwards; }
+        @keyframes pageFade { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .card-modern { box-shadow: 0 20px 35px -12px rgba(0,0,0,0.08); transition: all 0.2s ease; }
+        .active-nav { background: #0f172a; color: white !important; border-radius: 2rem; }
+        ::-webkit-scrollbar { width: 5px; }
+        ::-webkit-scrollbar-track { background: #e2e8f0; border-radius: 10px; }
+        ::-webkit-scrollbar-thumb { background: #3b82f6; border-radius: 10px; }
+        .city-badge { background: rgba(255,255,255,0.15); backdrop-filter: blur(4px); border-radius: 40px; padding: 6px 16px; font-weight: 800; letter-spacing: 0.5px; }
+        .modal-overlay { background-color: rgba(2, 6, 23, 0.85); backdrop-filter: blur(12px); }
+        button:active { transform: scale(0.97); }
+        .result-card:hover { border-color: #3b82f6; box-shadow: 0 20px 30px -12px rgba(0,0,0,0.12); }
+    </style>
+</head>
+<body class="text-slate-900">
+
+    <!-- ======================== GLOBAL NAVBAR (Visible City Names in Nav) ======================== -->
+    <nav class="bg-white/95 backdrop-blur-md border-b border-slate-200 sticky top-0 z-[200] shadow-sm">
+        <div class="max-w-7xl mx-auto px-5 h-20 flex justify-between items-center">
+            <div class="flex items-center gap-3 cursor-pointer" onclick="navigateTo('home')">
+                <div class="bg-gradient-to-br from-blue-700 to-blue-500 p-2.5 rounded-2xl text-white shadow-lg">
+                    <i class="fas fa-bolt-lightning fa-lg"></i>
+                </div>
+                <div>
+                    <span class="text-2xl font-extrabold tracking-tighter text-slate-900 leading-none">CheapTravel</span>
+                    <span class="text-[9px] font-black text-blue-600 uppercase tracking-[0.2em] block">Multi-City</span>
+                </div>
+            </div>
+            <div class="hidden md:flex gap-6 font-bold text-sm items-center">
+                <button onclick="navigateTo('home')" id="nav-home" class="text-slate-700 hover:text-blue-600 transition px-4 py-2 rounded-full">🏠 Search Routes</button>
+                <button onclick="navigateTo('bookings')" id="nav-bookings" class="text-slate-700 hover:text-blue-600 transition px-4 py-2 rounded-full">📋 My Bookings</button>
+                <button onclick="navigateTo('offers')" id="nav-offers" class="text-red-500 flex items-center gap-1 hover:scale-105 transition px-4 py-2 rounded-full"><i class="fas fa-tags"></i> Hot Offers</button>
+            </div>
+            <div class="flex items-center gap-3">
+                <div class="hidden sm:flex text-sm font-bold bg-slate-100 px-4 py-2 rounded-full text-slate-600"><i class="fas fa-map-marker-alt text-blue-500 mr-2"></i> <span id="globalCityHint">RAJAHMUNDRY → HYD</span></div>
+                <button class="bg-slate-900 text-white px-5 py-2.5 rounded-2xl font-extrabold text-sm hover:bg-blue-600 transition shadow-lg active:scale-95">
+                    <i class="fas fa-user-circle mr-2"></i> ACCOUNT
+                </button>
+            </div>
+        </div>
+    </nav>
+
+    <!-- ======================== PAGE CONTAINER (DYNAMIC) ======================== -->
+    <div id="app-root" class="min-h-screen"></div>
+
+    <!-- ======================== BOOKING MODAL (GLOBAL) ======================== -->
+    <div id="bookingModal" class="hidden fixed inset-0 z-[1000] flex items-center justify-center p-4">
+        <div class="modal-overlay absolute inset-0" onclick="closeBookingModal()"></div>
+        <div class="bg-white rounded-[2.5rem] w-full max-w-lg relative z-10 overflow-hidden shadow-2xl page-transition">
+            <div class="bg-gradient-to-r from-slate-800 to-slate-900 p-6 text-white">
+                <button onclick="closeBookingModal()" class="absolute right-5 top-5 text-white/70 hover:text-white text-2xl">&times;</button>
+                <i class="fas fa-ticket-alt text-3xl mb-2"></i>
+                <h3 class="text-2xl font-black" id="modalTitle">Confirm Booking</h3>
+                <p class="text-slate-300 text-sm" id="modalSubtitle">Review journey details</p>
+            </div>
+            <div class="p-7 space-y-5" id="modalBodyContent"></div>
+            <div class="p-6 bg-slate-50 flex gap-4">
+                <button onclick="closeBookingModal()" class="flex-1 py-3 rounded-xl font-bold border border-slate-300 hover:bg-slate-100">Cancel</button>
+                <button id="confirmPayBtn" class="flex-1 bg-blue-600 text-white py-3 rounded-xl font-black hover:bg-blue-700 transition shadow-md">Confirm Payment</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --------------------------------------------------------------
+        // EXPANDED DATABASE WITH VISIBLE CITY NAMES (MORE ROUTES)
+        // --------------------------------------------------------------
+        let currentPage = 'home';
+        let currentResultsList = [];
+        let currentSortMode = 'price';
+        let userBookings = [];
+        
+        // BUS FLEET (with clear from/to city names visible)
+        const BUS_FLEET = [
+            { id: "B101", name: "Orange Travels", type: "AC Sleeper 2+1", rating: 4.8, redbus: true, amenities: ["WiFi", "Water Bottle", "Snacks", "Charging"], color: "orange", basePrice: 850, duration: 6.2, from: "RAJAHMUNDRY", to: "HYDERABAD", fromFull: "Rajahmundry (Rjy)", toFull: "Hyderabad (HYD)" },
+            { id: "B102", name: "Morning Star", type: "AC Seater/Sleeper", rating: 4.5, redbus: true, amenities: ["Charging", "Blanket", "Emergency Exit"], color: "blue", basePrice: 720, duration: 7.1, from: "RAJAHMUNDRY", to: "HYDERABAD", fromFull: "Rajahmundry (Rjy)", toFull: "Hyderabad (HYD)" },
+            { id: "B103", name: "VRL Travels", type: "Multi-Axle AC", rating: 4.7, redbus: true, amenities: ["CCTV", "WiFi", "Movies", "Sanitizer"], color: "indigo", basePrice: 1100, duration: 5.2, from: "RAJAHMUNDRY", to: "HYDERABAD", fromFull: "Rajahmundry", toFull: "Hyderabad" },
+            { id: "B104", name: "APS RTC", type: "Scania AC", rating: 4.6, redbus: false, amenities: ["Sanitized", "Water", "USB"], color: "red", basePrice: 650, duration: 8.0, from: "VIJAYAWADA", to: "CHENNAI", fromFull: "Vijayawada (BZA)", toFull: "Chennai (MAS)" },
+            { id: "B105", name: "IntrCity SmartBus", type: "Luxury AC", rating: 4.9, redbus: true, amenities: ["USB", "Blanket", "Snacks", "Live Tracking"], color: "purple", basePrice: 1250, duration: 4.8, from: "BENGALURU", to: "MYSORE", fromFull: "Bengaluru (BLR)", toFull: "Mysore (MYS)" },
+            { id: "B106", name: "KPN Travels", type: "Volvo AC", rating: 4.7, redbus: true, amenities: ["Charging", "Water", "Entertainment"], color: "green", basePrice: 990, duration: 6.5, from: "CHENNAI", to: "COIMBATORE", fromFull: "Chennai (MAS)", toFull: "Coimbatore (CBE)" },
+            { id: "B107", name: "SRS Travels", type: "Sleeper AC", rating: 4.4, redbus: false, amenities: ["Blanket", "Charging"], color: "yellow", basePrice: 780, duration: 9.0, from: "MUMBAI", to: "PUNE", fromFull: "Mumbai (BOM)", toFull: "Pune (PNQ)" }
+        ];
+        
+        // TRAIN FLEET
+        const TRAIN_FLEET = [
+            { id: "T201", name: "Godavari Express", type: "Superfast (12727)", rating: 4.9, amenities: ["Pantry", "E-Catering", "Bedding", "Charging"], color: "blue", basePrice: 450, duration: 7.5, from: "RAJAHMUNDRY", to: "HYDERABAD", fromFull: "Rajahmundry", toFull: "Hyderabad" },
+            { id: "T202", name: "Shatabdi Exp", type: "Chair Car", rating: 4.7, amenities: ["Snacks", "Newspapers", "AC", "Coffee"], color: "cyan", basePrice: 900, duration: 5.5, from: "RAJAHMUNDRY", to: "HYDERABAD", fromFull: "Rajahmundry", toFull: "Hyderabad" },
+            { id: "T203", name: "Garib Rath", type: "AC Economy", rating: 4.2, amenities: ["AC", "Side Lower Berth", "Bedroll"], color: "green", basePrice: 380, duration: 8.2, from: "RAJAHMUNDRY", to: "HYDERABAD", fromFull: "Rajahmundry", toFull: "Hyderabad" },
+            { id: "T204", name: "Chennai Express", type: "Mail Express", rating: 4.3, amenities: ["Pantry", "Charging", "Fan"], color: "orange", basePrice: 550, duration: 9.0, from: "VIJAYAWADA", to: "CHENNAI", fromFull: "Vijayawada", toFull: "Chennai" },
+            { id: "T205", name: "Vande Bharat", type: "Semi-high speed", rating: 4.95, amenities: ["WiFi", "Meals", "Executive Seats", "LED"], color: "blue", basePrice: 1350, duration: 3.2, from: "BENGALURU", to: "MYSORE", fromFull: "Bengaluru", toFull: "Mysore" },
+            { id: "T206", name: "Coimbatore SF Exp", type: "Superfast", rating: 4.5, amenities: ["Pantry", "Charging", "Blanket"], color: "red", basePrice: 620, duration: 7.2, from: "CHENNAI", to: "COIMBATORE", fromFull: "Chennai", toFull: "Coimbatore" },
+            { id: "T207", name: "Deccan Queen", type: "ICF Express", rating: 4.6, amenities: ["Tea/Coffee", "Snacks"], color: "indigo", basePrice: 410, duration: 3.5, from: "MUMBAI", to: "PUNE", fromFull: "Mumbai CST", toFull: "Pune Junction" }
+        ];
+        
+        function getDynamicPrice(base) { return base + Math.floor(Math.random() * 150); }
+        
+        function performSearch(fromVal, toVal, maxBudget, includeBuses, includeTrains) {
+            let pool = [];
+            if (includeBuses) pool.push(...BUS_FLEET.filter(b => b.from === fromVal && b.to === toVal).map(b => ({ ...b, mode: 'BUS', currentPrice: getDynamicPrice(b.basePrice) })));
+            if (includeTrains) pool.push(...TRAIN_FLEET.filter(t => t.from === fromVal && t.to === toVal).map(t => ({ ...t, mode: 'TRAIN', currentPrice: getDynamicPrice(t.basePrice) })));
+            return pool.filter(item => item.currentPrice <= maxBudget);
+        }
+        
+        // update navbar city hint
+        function updateNavCityHint(from, to) {
+            const hintSpan = document.getElementById('globalCityHint');
+            if (hintSpan && from && to) hintSpan.innerHTML = `<i class="fas fa-map-marker-alt text-blue-500 mr-1"></i> ${from} → ${to}`;
+        }
+        
+        // ---------------------- PAGE NAVIGATION --------------------------
+        function navigateTo(page) {
+            currentPage = page;
+            ['home', 'bookings', 'offers'].forEach(p => {
+                const btn = document.getElementById(`nav-${p}`);
+                if (btn) {
+                    if (p === page) btn.classList.add('active-nav', 'bg-slate-800', 'text-white');
+                    else btn.classList.remove('active-nav', 'bg-slate-800', 'text-white');
+                    if (p !== page) btn.classList.add('text-slate-700');
+                }
+            });
+            renderCurrentPage();
+        }
+        
+        function renderCurrentPage() {
+            const root = document.getElementById('app-root');
+            if (currentPage === 'home') root.innerHTML = renderHomePage();
+            else if (currentPage === 'bookings') root.innerHTML = renderBookingsPage();
+            else if (currentPage === 'offers') root.innerHTML = renderOffersPage();
+            if (currentPage === 'home') attachHomeEvents();
+            if (currentPage === 'bookings') attachBookingsEvents();
+        }
+        
+        // ========================= HOME PAGE (CITY NAMES HIGHLY VISIBLE) =========================
+        function renderHomePage() {
+            return `
+                <section class="hero-gradient text-white pt-20 pb-28 px-4 relative">
+                    <div class="absolute top-0 right-0 w-80 h-80 bg-blue-500/10 rounded-full blur-3xl"></div>
+                    <div class="max-w-6xl mx-auto text-center relative z-10">
+                        <h1 class="text-5xl md:text-6xl font-extrabold mb-5 tracking-tighter">Where to? <span class="text-blue-300">Buses & Trains</span></h1>
+                        <p class="text-slate-200 font-semibold text-lg">Real-time fares • 200+ cities</p>
+                        <div id="home-search-card" class="bg-white p-2 rounded-[3rem] shadow-2xl flex flex-col lg:flex-row gap-2 mt-10 border border-white/30">
+                            <div class="flex-1 relative"><i class="fas fa-circle text-blue-500 absolute left-5 top-1/2 -translate-y-1/2 text-[8px]"></i><input type="text" id="homeFrom" placeholder="From City e.g., RAJAHMUNDRY" class="w-full pl-12 pr-4 py-5 bg-slate-50 rounded-2xl font-black uppercase outline-none focus:ring-2 focus:ring-blue-500 text-slate-800 text-base"></div>
+                            <button id="swapHomeBtn" class="hidden lg:block bg-slate-100 p-3 rounded-full hover:bg-blue-50 transition text-blue-600"><i class="fas fa-arrows-rotate"></i></button>
+                            <div class="flex-1 relative"><i class="fas fa-location-dot text-red-500 absolute left-5 top-1/2 -translate-y-1/2 text-[8px]"></i><input type="text" id="homeTo" placeholder="To City e.g., HYDERABAD" class="w-full pl-12 pr-4 py-5 bg-slate-50 rounded-2xl font-black uppercase outline-none focus:ring-2 focus:ring-blue-500 text-slate-800 text-base"></div>
+                            <button id="searchBtnMain" class="bg-blue-600 hover:bg-blue-700 text-white px-8 py-5 rounded-2xl font-extrabold flex items-center gap-2 justify-center"><i class="fas fa-magnifying-glass"></i> SEARCH ROUTES</button>
+                        </div>
+                        <div class="flex flex-wrap justify-center gap-5 mt-6 text-[11px] font-bold text-slate-200">
+                            <label class="flex items-center gap-2 bg-white/20 px-5 py-2 rounded-full backdrop-blur-sm"><input type="checkbox" id="filterBusesHome" checked> <i class="fas fa-bus"></i> Buses</label>
+                            <label class="flex items-center gap-2 bg-white/20 px-5 py-2 rounded-full backdrop-blur-sm"><input type="checkbox" id="filterTrainsHome" checked> <i class="fas fa-train"></i> Trains</label>
+                            <div class="flex items-center gap-2 bg-white/20 px-4 py-2 rounded-full"><i class="fas fa-rupee-sign"></i> Max: <span id="priceValHome">₹3000</span> <input type="range" id="priceRangeHome" min="100" max="3000" value="3000" class="w-28 ml-1 accent-white"></div>
+                        </div>
+                        <!-- Popular City Chips (VISIBLE) -->
+                        <div class="flex flex-wrap justify-center gap-2 mt-7">
+                            <span class="city-badge text-xs cursor-pointer hover:bg-white/30" onclick="setQuickCity('RAJAHMUNDRY','HYDERABAD')">🚌 RAJAHMUNDRY → HYDERABAD</span>
+                            <span class="city-badge text-xs cursor-pointer hover:bg-white/30" onclick="setQuickCity('VIJAYAWADA','CHENNAI')">🚆 VIJAYAWADA → CHENNAI</span>
+                            <span class="city-badge text-xs cursor-pointer hover:bg-white/30" onclick="setQuickCity('BENGALURU','MYSORE')">🚍 BENGALURU → MYSORE</span>
+                            <span class="city-badge text-xs cursor-pointer hover:bg-white/30" onclick="setQuickCity('MUMBAI','PUNE')">🚄 MUMBAI → PUNE</span>
+                        </div>
+                    </div>
+                </section>
+                <div class="max-w-7xl mx-auto px-4 -mt-12 relative z-20 pb-16">
+                    <div class="bg-white/90 backdrop-blur-sm rounded-3xl p-6 shadow-xl border border-white/40">
+                        <div class="flex justify-between items-center flex-wrap gap-4 mb-6">
+                            <div><h2 id="resultHeaderTitle" class="text-2xl font-black flex items-center gap-2"><i class="fas fa-route text-blue-500"></i> Available Routes</h2><p id="resultSubtitle" class="text-slate-500 text-sm font-medium">Enter cities to see live bus/train options</p></div>
+                            <div class="flex bg-slate-100 p-1.5 rounded-2xl"><button id="sortPriceHome" class="sort-btn-active px-5 py-2 rounded-xl text-xs font-black bg-slate-800 text-white">Cheapest</button><button id="sortDurationHome" class="px-5 py-2 rounded-xl text-xs font-black text-slate-600">Fastest</button></div>
+                        </div>
+                        <div id="resultsContainerHome" class="space-y-4 min-h-[320px]">
+                            <div class="text-center p-14 text-slate-400 bg-slate-50 rounded-3xl"><i class="fas fa-city text-5xl mb-3 opacity-30"></i><p class="font-bold">✨ Search any city pair above ✨</p><p class="text-xs">eg: RAJAHMUNDRY → HYDERABAD, DELHI → JAIPUR</p></div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+        
+        function setQuickCity(from, to) {
+            document.getElementById('homeFrom').value = from;
+            document.getElementById('homeTo').value = to;
+            triggerHomeSearch();
+        }
+        
+        function triggerHomeSearch() {
+            const from = document.getElementById('homeFrom').value.trim().toUpperCase();
+            const to = document.getElementById('homeTo').value.trim().toUpperCase();
+            const maxBudget = parseInt(document.getElementById('priceRangeHome').value);
+            const includeBus = document.getElementById('filterBusesHome').checked;
+            const includeTrain = document.getElementById('filterTrainsHome').checked;
+            if (!from || !to) return;
+            updateNavCityHint(from, to);
+            document.getElementById('resultHeaderTitle').innerHTML = `<i class="fas fa-map-marked-alt text-blue-500 mr-2"></i> ${from} → ${to}`;
+            document.getElementById('resultSubtitle').innerHTML = `<i class="fas fa-spinner fa-spin"></i> Fetching live inventory...`;
+            document.getElementById('resultsContainerHome').innerHTML = `<div class="p-12 text-center"><div class="w-10 h-10 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto"></div><p class="mt-4 font-bold">Checking RedBus & IRCTC for ${from} to ${to}</p></div>`;
+            setTimeout(() => {
+                const results = performSearch(from, to, maxBudget, includeBus, includeTrain);
+                currentResultsList = results;
+                document.getElementById('resultSubtitle').innerHTML = `🎫 ${results.length} travel options found • Real-time prices`;
+                renderSearchResults(results, currentSortMode);
+            }, 600);
+        }
+        
+        function renderSearchResults(results, sortBy) {
+            const container = document.getElementById('resultsContainerHome');
+            if (!results.length) { container.innerHTML = `<div class="bg-white p-16 rounded-3xl text-center border-2 border-dashed"><i class="fas fa-train text-5xl text-slate-300 mb-3"></i><p class="font-black text-slate-600">No direct results. Try different cities or increase budget.</p><p class="text-xs text-slate-400 mt-1">Popular: RAJAHMUNDRY-HYDERABAD, BENGALURU-MYSORE</p></div>`; return; }
+            let sorted = [...results];
+            if (sortBy === 'price') sorted.sort((a,b) => a.currentPrice - b.currentPrice);
+            else sorted.sort((a,b) => a.duration - b.duration);
+            let html = '';
+            sorted.forEach((item, idx) => {
+                const isBus = item.mode === 'BUS';
+                const displayFrom = item.fromFull || item.from;
+                const displayTo = item.toFull || item.to;
+                html += `<div class="result-card bg-white p-6 rounded-2xl border-2 border-slate-100 shadow-md hover:border-blue-400 transition-all flex flex-col md:flex-row justify-between gap-5">
+                    <div class="flex gap-5">
+                        <div class="bg-${item.color}-100 p-5 rounded-2xl w-20 h-20 flex items-center justify-center"><i class="fas fa-${isBus ? 'bus' : 'train'} text-3xl text-${item.color}-600"></i>${item.redbus ? '<div class="text-[8px] bg-red-600 text-white px-1.5 rounded-full mt-1">REDBUS</div>' : ''}</div>
+                        <div><div class="flex items-center gap-2 flex-wrap"><h3 class="text-xl font-black">${item.name}</h3><span class="bg-yellow-100 text-yellow-800 text-[10px] px-2 py-0.5 rounded-full font-black">⭐ ${item.rating}</span></div>
+                        <p class="text-sm font-bold text-slate-500 mt-1"><i class="fas fa-map-pin text-blue-500"></i> ${displayFrom}  →  <i class="fas fa-location-dot text-red-400"></i> ${displayTo}</p>
+                        <p class="text-xs text-slate-500">${item.type} • ${item.duration} hrs • ${item.amenities.slice(0,2).join(', ')}</p>
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-8 justify-between md:justify-end">
+                        <div><span class="text-3xl font-black text-slate-900">₹${item.currentPrice}</span><p class="text-[9px] uppercase font-bold text-green-600">incl. taxes</p></div>
+                        <button onclick="bookTripDirectly('${item.id}', '${item.mode}')" class="bg-slate-900 hover:bg-blue-600 text-white px-8 py-3 rounded-xl font-black transition shadow-md">SELECT</button>
+                    </div>
+                </div>`;
+            });
+            container.innerHTML = html;
+        }
+        
+        function attachHomeEvents() {
+            const fromInput = document.getElementById('homeFrom');
+            const toInput = document.getElementById('homeTo');
+            const searchBtn = document.getElementById('searchBtnMain');
+            const swapBtn = document.getElementById('swapHomeBtn');
+            const filterBuses = document.getElementById('filterBusesHome');
+            const filterTrains = document.getElementById('filterTrainsHome');
+            const priceSlider = document.getElementById('priceRangeHome');
+            const priceLabel = document.getElementById('priceValHome');
+            const sortPrice = document.getElementById('sortPriceHome');
+            const sortDuration = document.getElementById('sortDurationHome');
+            
+            fromInput.value = "RAJAHMUNDRY";
+            toInput.value = "HYDERABAD";
+            updateNavCityHint("RAJAHMUNDRY", "HYDERABAD");
+            
+            const refresh = () => triggerHomeSearch();
+            priceSlider.addEventListener('input', (e) => { priceLabel.innerText = `₹${e.target.value}`; refresh(); });
+            filterBuses.addEventListener('change', refresh);
+            filterTrains.addEventListener('change', refresh);
+            searchBtn.addEventListener('click', refresh);
+            if(swapBtn) swapBtn.addEventListener('click', () => { let t = fromInput.value; fromInput.value = toInput.value; toInput.value = t; refresh(); });
+            sortPrice.addEventListener('click', () => { currentSortMode = 'price'; sortPrice.classList.add('bg-slate-800','text-white'); sortDuration.classList.remove('bg-slate-800','text-white'); sortDuration.classList.add('text-slate-600'); renderSearchResults(currentResultsList, 'price'); });
+            sortDuration.addEventListener('click', () => { currentSortMode = 'duration'; sortDuration.classList.add('bg-slate-800','text-white'); sortPrice.classList.remove('bg-slate-800','text-white'); sortPrice.classList.add('text-slate-600'); renderSearchResults(currentResultsList, 'duration'); });
+            refresh();
+        }
+        
+        // global booking method
+        function bookTripDirectly(itemId, mode) {
+            const fullList = [...BUS_FLEET.map(b => ({...b, mode: 'BUS'})), ...TRAIN_FLEET.map(t => ({...t, mode: 'TRAIN'}))];
+            const trip = fullList.find(t => t.id === itemId);
+            if (!trip) return;
+            const finalPrice = getDynamicPrice(trip.basePrice);
+            const selectedTrip = { ...trip, currentPrice: finalPrice, travelDate: new Date().toLocaleDateString() };
+            document.getElementById('modalTitle').innerHTML = `<i class="fas fa-${trip.mode === 'BUS' ? 'bus' : 'train'} mr-2"></i> ${trip.name}`;
+            document.getElementById('modalSubtitle').innerHTML = `${trip.fromFull || trip.from} ✈️ ${trip.toFull || trip.to} • ${trip.duration}h journey`;
+            document.getElementById('modalBodyContent').innerHTML = `
+                <div class="flex justify-between border-b pb-3"><span class="font-bold text-slate-600">Route</span><span class="font-black">${trip.fromFull || trip.from} → ${trip.toFull || trip.to}</span></div>
+                <div class="flex justify-between border-b pb-3"><span class="font-bold text-slate-600">Service</span><span>${trip.type} (${trip.mode})</span></div>
+                <div class="flex justify-between border-b pb-3"><span class="font-bold text-slate-600">Amenities</span><span>${trip.amenities.slice(0,3).join(', ')}</span></div>
+                <div class="flex justify-between pt-2"><span class="font-bold text-xl">💰 Final Fare</span><span class="text-2xl font-black text-blue-600">₹${finalPrice}</span></div>
+            `;
+            const confirmBtn = document.getElementById('confirmPayBtn');
+            confirmBtn.onclick = () => {
+                const newBooking = { id: Date.now(), operator: trip.name, from: trip.fromFull || trip.from, to: trip.toFull || trip.to, date: new Date().toLocaleString(), amount: finalPrice, mode: trip.mode, type: trip.type };
+                userBookings.unshift(newBooking);
+                alert(`✅ Booking confirmed! ${trip.name} from ${newBooking.from} to ${newBooking.to}. Booking ID: #${newBooking.id}`);
+                closeBookingModal();
+                if (currentPage === 'bookings') renderCurrentPage();
+                else navigateTo('bookings');
+            };
+            document.getElementById('bookingModal').classList.remove('hidden');
+            document.body.style.overflow = 'hidden';
+        }
+        
+        function closeBookingModal() { document.getElementById('bookingModal').classList.add('hidden'); document.body.style.overflow = 'auto'; }
+        
+        // Bookings page
+        function renderBookingsPage() {
+            if (!userBookings.length) return `<div class="max-w-5xl mx-auto px-4 py-24 text-center"><div class="bg-white rounded-3xl p-16 shadow-md"><i class="fas fa-ticket-alt text-7xl text-slate-300 mb-4"></i><h2 class="text-2xl font-black">No active bookings</h2><p class="text-slate-500 mt-2">Search for routes and grab your seat</p><button onclick="navigateTo('home')" class="mt-6 bg-blue-600 text-white px-8 py-3 rounded-2xl font-bold shadow-lg">Start Exploring</button></div></div>`;
+            let html = `<div class="max-w-5xl mx-auto px-4 py-12"><h1 class="text-3xl font-black mb-2"><i class="fas fa-bookmark text-blue-600 mr-3"></i>My Journeys</h1><p class="text-slate-500 mb-8">Upcoming trips & booking history</p><div class="space-y-4">`;
+            userBookings.forEach(b => { html += `<div class="bg-white rounded-2xl p-6 shadow-md border-l-8 border-blue-500 flex flex-wrap justify-between items-center gap-4"><div><i class="fas fa-${b.mode === 'BUS' ? 'bus' : 'train'} text-blue-600 text-xl mr-3"></i><span class="font-black text-lg">${b.operator}</span><p class="text-sm font-semibold text-slate-600"><i class="fas fa-map-marker-alt"></i> ${b.from}  →  ${b.to}</p><p class="text-xs text-slate-400">${b.type} • Booked: ${b.date}</p></div><div class="text-right"><span class="text-2xl font-black">₹${b.amount}</span><p class="text-green-600 text-xs font-bold mt-1">CONFIRMED</p><button class="text-red-500 text-xs underline mt-2" onclick="cancelDemoBooking(${b.id})">Cancel trip</button></div></div>`; });
+            html += `</div></div>`;
+            return html;
+        }
+        
+        function cancelDemoBooking(id) { userBookings = userBookings.filter(b => b.id !== id); alert("Trip cancelled. Refund will be processed."); renderCurrentPage(); }
+        function attachBookingsEvents() { window.cancelDemoBooking = cancelDemoBooking; }
+        
+        // Offers page
+        function renderOffersPage() {
+            return `<div class="max-w-6xl mx-auto px-4 py-16"><div class="text-center mb-12"><h1 class="text-4xl font-black bg-gradient-to-r from-red-600 to-orange-500 bg-clip-text text-transparent">🔥 City Special Offers</h1><p class="text-slate-500">Exclusive deals for visible routes</p></div><div class="grid md:grid-cols-3 gap-7"><div class="bg-white rounded-3xl p-7 shadow-lg border-t-4 border-red-500"><i class="fas fa-bus text-3xl text-red-500 mb-3"></i><h3 class="text-xl font-black">Rajahmundry → Hyd</h3><p class="text-sm my-2">Flat 30% off on Orange Travels + free snack.</p><span class="text-xs font-mono bg-slate-100 px-2 py-1 rounded">CODE: FIRST30</span></div><div class="bg-white rounded-3xl p-7 shadow-lg border-t-4 border-blue-500"><i class="fas fa-train text-3xl text-blue-500 mb-3"></i><h3 class="text-xl font-black">Vijayawada → Chennai</h3><p class="text-sm my-2">10% cashback + zero payment gateway fee.</p><span class="text-xs font-mono bg-slate-100 px-2 py-1 rounded">SAVE10</span></div><div class="bg-white rounded-3xl p-7 shadow-lg border-t-4 border-green-500"><i class="fas fa-wallet text-3xl text-green-500 mb-3"></i><h3 class="text-xl font-black">Bengaluru ↔ Mysore</h3><p class="text-sm my-2">₹100 off on Vande Bharat & IntrCity Bus.</p><span class="text-xs font-mono bg-slate-100 px-2 py-1 rounded">MYSORE100</span></div></div><div class="mt-14 bg-gradient-to-r from-indigo-50 to-blue-50 p-8 rounded-3xl text-center"><p class="font-black">🎁 Refer a friend and get ₹200 wallet cash</p><button onclick="navigateTo('home')" class="mt-4 bg-blue-700 text-white px-8 py-3 rounded-2xl font-black shadow">Book City Routes</button></div></div>`;
+        }
+        
+        // Expose globals
+        window.navigateTo = navigateTo;
+        window.bookTripDirectly = bookTripDirectly;
+        window.closeBookingModal = closeBookingModal;
+        window.cancelDemoBooking = cancelDemoBooking;
+        window.setQuickCity = setQuickCity;
+        navigateTo('home');
+    </script>
+</body>
+</html>
